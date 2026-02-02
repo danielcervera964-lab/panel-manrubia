@@ -106,10 +106,12 @@ export default function App() {
     const msgDesglose = conceptos
       .filter(c => c.concepto && c.precio)
       .map(c => `• ${c.concepto}: ${c.precio}€`)
-      .join('\n')
+      .join('%0A')
     
-    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\n${msgDesglose}\n\n*Total: ${precioTotal}€*\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
-    window.open(`https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`, '_blank')
+    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️%0A%0A${msgDesglose}%0A%0A*Total: ${precioTotal}€*%0A%0APor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
+    
+    // Usar WhatsApp Web en lugar de wa.me
+    window.open(`https://web.whatsapp.com/send?phone=34${bici.telefono}&text=${msg}`, '_blank')
     
     setModalFinalizar(null)
     setConceptos([{ concepto: '', precio: '' }])
