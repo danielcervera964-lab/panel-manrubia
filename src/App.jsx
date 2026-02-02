@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
-export default function App() {
+function App() {
   const [bicis, setBicis] = useState([])
   const [historial, setHistorial] = useState([])
   const [tab, setTab] = useState('curso')
@@ -362,3 +362,5 @@ export default function App() {
     </div>
   )
 }
+
+export default App
