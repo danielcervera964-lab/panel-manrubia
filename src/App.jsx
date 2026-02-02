@@ -91,7 +91,7 @@ export default function App() {
     setModalFinalizar(bici.id)
     setModoEdicion(true)
     
-    // Cargar datos existentes
+    // Cargar datos existentes del desglose guardado
     if (bici.desglose) {
       const conceptosExistentes = bici.desglose.split('\n').map(linea => {
         const [concepto, precio] = linea.split(': ')
@@ -99,6 +99,32 @@ export default function App() {
       })
       setConceptos(conceptosExistentes)
       setPrecioTotal(bici.precio)
+    }
+  }
+
+  function abrirModalFinalizar(bici) {
+    setModalFinalizar(bici.id)
+    setModoEdicion(false)
+    
+    // Pre-cargar trabajos desde el campo "trabajo"
+    if (bici.trabajo && bici.trabajo.trim()) {
+      // Dividir por saltos de línea, comas o punto y coma
+      const tareas = bici.trabajo
+        .split(/[\n,;]+/)
+        .map(t => t.trim())
+        .filter(t => t.length > 0)
+        .map(tarea => ({ concepto: tarea, precio: '' }))
+      
+      if (tareas.length > 0) {
+        setConceptos(tareas)
+        setPrecioTotal('')
+      } else {
+        setConceptos([{ concepto: '', precio: '' }])
+        setPrecioTotal('')
+      }
+    } else {
+      setConceptos([{ concepto: '', precio: '' }])
+      setPrecioTotal('')
     }
   }
 
@@ -313,7 +339,7 @@ export default function App() {
                 <div className="flex gap-2 flex-wrap justify-end">
                   {tab === 'curso' && (
                     <button
-                      onClick={() => setModalFinalizar(bici.id)}
+                      onClick={() => abrirModalFinalizar(bici)}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
                     >
                       Marcar Lista
@@ -376,7 +402,7 @@ export default function App() {
               />
               
               <textarea
-                placeholder="¿Qué hay que hacerle a la bici? *"
+                placeholder="Trabajos a realizar (separa con comas o saltos de línea) *"
                 value={trabajo}
                 onChange={e => setTrabajo(e.target.value)}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-6 focus:border-orange-500 focus:outline-none h-32"
