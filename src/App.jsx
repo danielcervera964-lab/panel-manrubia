@@ -12,6 +12,10 @@ export default function App() {
   const [nombre, setNombre] = useState('')
   const [telefono, setTelefono] = useState('')
   const [trabajo, setTrabajo] = useState('')
+  
+  // Para el desglose de factura
+  const [conceptos, setConceptos] = useState([{ concepto: '', precio: '' }])
+  const [precioTotal, setPrecioTotal] = useState('')
 
   useEffect(() => {
     cargarDatos()
@@ -55,21 +59,61 @@ export default function App() {
     cargarDatos()
   }
 
-  async function finalizarBici(id, precio) {
+  function añadirConcepto() {
+    setConceptos([...conceptos, { concepto: '', precio: '' }])
+  }
+
+  function eliminarConcepto(index) {
+    setConceptos(conceptos.filter((_, i) => i !== index))
+  }
+
+  function actualizarConcepto(index, campo, valor) {
+    const nuevos = [...conceptos]
+    nuevos[index][campo] = valor
+    setConceptos(nuevos)
+    
+    // Calcular total automáticamente
+    const total = nuevos.reduce((sum, c) => sum + (parseFloat(c.precio) || 0), 0)
+    setPrecioTotal(total.toFixed(2))
+  }
+
+  async function finalizarBici(id) {
     const bici = bicis.find(b => b.id === id)
+    
+    // Validar que haya al menos un concepto con precio
+    const hayConceptos = conceptos.some(c => c.concepto && c.precio)
+    if (!hayConceptos || !precioTotal) {
+      alert('Añade al menos un concepto con precio')
+      return
+    }
+
+    // Generar desglose en texto
+    const desglose = conceptos
+      .filter(c => c.concepto && c.precio)
+      .map(c => `${c.concepto}: ${c.precio}€`)
+      .join('\n')
     
     await supabase.from('bicis')
       .update({ 
         estado: 'finalizada', 
         fecha_fin: new Date().toISOString(),
-        precio 
+        precio: precioTotal,
+        desglose: desglose
       })
       .eq('id', id)
 
-    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\nTotal: ${precio}€\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
+    // Mensaje WhatsApp con desglose
+    const msgDesglose = conceptos
+      .filter(c => c.concepto && c.precio)
+      .map(c => `• ${c.concepto}: ${c.precio}€`)
+      .join('\n')
+    
+    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\n${msgDesglose}\n\n*Total: ${precioTotal}€*\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
     window.open(`https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`, '_blank')
     
     setModalFinalizar(null)
+    setConceptos([{ concepto: '', precio: '' }])
+    setPrecioTotal('')
     cargarDatos()
   }
 
@@ -152,7 +196,22 @@ export default function App() {
                   <p className="text-sm text-gray-500 mt-2">
                     {new Date(bici.fecha).toLocaleDateString('es-ES')}
                   </p>
-                  {tab === 'finalizada' && bici.precio && (
+                  
+                  {tab === 'finalizada' && bici.desglose && (
+                    <div className="mt-4 p-4 bg-orange-50 rounded-lg">
+                      <p className="font-semibold text-gray-700 mb-2">Desglose:</p>
+                      <div className="space-y-1 text-sm">
+                        {bici.desglose.split('\n').map((linea, i) => (
+                          <p key={i} className="text-gray-700">{linea}</p>
+                        ))}
+                      </div>
+                      <p className="text-2xl font-bold text-orange-600 mt-3 pt-3 border-t border-orange-200">
+                        Total: {bici.precio}€
+                      </p>
+                    </div>
+                  )}
+                  
+                  {tab === 'finalizada' && !bici.desglose && bici.precio && (
                     <p className="text-2xl font-bold text-orange-600 mt-2">{bici.precio}€</p>
                   )}
                 </div>
@@ -229,31 +288,68 @@ export default function App() {
 
         {modalFinalizar && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-8 max-w-md w-full">
-              <h2 className="text-2xl font-bold mb-6">Finalizar Bici</h2>
+            <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-2xl font-bold mb-6">Finalizar Bici - Desglose</h2>
               
-              <input
-                type="number"
-                placeholder="Precio final (€)"
-                id="precio-input"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-6 focus:border-orange-500 focus:outline-none"
-              />
+              <div className="space-y-3 mb-6">
+                {conceptos.map((c, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Concepto (ej: Cambio de frenos)"
+                      value={c.concepto}
+                      onChange={e => actualizarConcepto(i, 'concepto', e.target.value)}
+                      className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-orange-500 focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      placeholder="€"
+                      value={c.precio}
+                      onChange={e => actualizarConcepto(i, 'precio', e.target.value)}
+                      className="w-24 px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-orange-500 focus:outline-none"
+                    />
+                    {conceptos.length > 1 && (
+                      <button
+                        onClick={() => eliminarConcepto(i)}
+                        className="px-3 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={añadirConcepto}
+                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition mb-6"
+              >
+                + Añadir concepto
+              </button>
+
+              <div className="bg-orange-50 p-4 rounded-lg mb-6">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold text-gray-700">Total:</span>
+                  <span className="text-3xl font-bold text-orange-600">{precioTotal || '0'}€</span>
+                </div>
+              </div>
 
               <div className="flex gap-4">
                 <button
-                  onClick={() => setModalFinalizar(null)}
+                  onClick={() => {
+                    setModalFinalizar(null)
+                    setConceptos([{ concepto: '', precio: '' }])
+                    setPrecioTotal('')
+                  }}
                   className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition"
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={() => {
-                    const precio = document.getElementById('precio-input').value
-                    if (precio) finalizarBici(modalFinalizar, precio)
-                  }}
+                  onClick={() => finalizarBici(modalFinalizar)}
                   className="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition"
                 >
-                  Enviar WhatsApp
+                  Finalizar y Enviar WhatsApp
                 </button>
               </div>
             </div>
