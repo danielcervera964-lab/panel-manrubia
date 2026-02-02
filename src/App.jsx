@@ -3,233 +3,319 @@ import { supabase } from './supabaseClient'
 
 export default function App() {
   const [bicis, setBicis] = useState([])
-  const [historialClientes, setHistorialClientes] = useState([])
-  const [busqueda, setBusqueda] = useState('')
-  const [mostrarFormulario, setMostrarFormulario] = useState(false)
-  const [nuevaBici, setNuevaBici] = useState({ nombre: '', telefono: '', trabajo: '' })
-  const [biciLista, setBiciLista] = useState(null)
-  const [precioFinal, setPrecioFinal] = useState('')
-  const [confirmarEliminar, setConfirmarEliminar] = useState(null)
-  const [vistaActual, setVistaActual] = useState('curso')
-  const [cargando, setCargando] = useState(true)
+  const [historial, setHistorial] = useState([])
+  const [tab, setTab] = useState('curso')
+  const [buscar, setBuscar] = useState('')
+  const [modal, setModal] = useState(false)
+  const [modalFinalizar, setModalFinalizar] = useState(null)
+  
+  // Form nueva bici
+  const [nombre, setNombre] = useState('')
+  const [telefono, setTelefono] = useState('')
+  const [trabajos, setTrabajos] = useState([])
+  const [nuevaTarea, setNuevaTarea] = useState('')
 
   useEffect(() => {
     cargarDatos()
   }, [])
 
-  const cargarDatos = async () => {
-    setCargando(true)
-    const { data: bicisData } = await supabase.from('bicis').select('*').order('fecha', { ascending: true })
-    const { data: historialData } = await supabase.from('historial_clientes').select('*')
-    if (bicisData) setBicis(bicisData)
-    if (historialData) setHistorialClientes(historialData)
-    setCargando(false)
+  async function cargarDatos() {
+    const { data: b } = await supabase.from('bicis').select('*').order('fecha', { ascending: false })
+    const { data: h } = await supabase.from('historial_clientes').select('*')
+    setBicis(b || [])
+    setHistorial(h || [])
   }
 
-  const bicisEnCurso = bicis.filter(b => b.estado === 'curso')
-  const bicisFinalizadas = bicis.filter(b => b.estado === 'finalizada')
-
-  const bicisFiltradas = (vistaActual === 'curso' ? bicisEnCurso : bicisFinalizadas)
-    .filter(bici => 
-      bici.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      bici.telefono.includes(busqueda)
-    )
-
-  const limpiarTelefono = (tel) => {
-    let limpio = tel.replace(/[\s\-\+\(\)]/g, '')
-    if (limpio.startsWith('34') && limpio.length > 9) {
-      limpio = limpio.substring(2)
-    }
-    return limpio
+  async function buscarCliente(tel) {
+    const cliente = historial.find(c => c.telefono === tel)
+    if (cliente) setNombre(cliente.nombre)
   }
 
-  const handleTelefonoChange = (telefono) => {
-    setNuevaBici(prev => ({ ...prev, telefono }))
-    const telefonoLimpio = limpiarTelefono(telefono)
-    const clienteExistente = historialClientes.find(h => limpiarTelefono(h.telefono) === telefonoLimpio)
-    if (clienteExistente) {
-      setNuevaBici(prev => ({ ...prev, nombre: clienteExistente.nombre, telefono }))
+  function añadirTarea() {
+    if (nuevaTarea.trim()) {
+      setTrabajos([...trabajos, { tarea: nuevaTarea, hecho: false }])
+      setNuevaTarea('')
     }
   }
 
-  const agregarBici = async () => {
-    if (!nuevaBici.nombre || !nuevaBici.telefono || !nuevaBici.trabajo) return
+  function eliminarTarea(index) {
+    setTrabajos(trabajos.filter((_, i) => i !== index))
+  }
 
-    const { data, error } = await supabase.from('bicis').insert([
-      { nombre: nuevaBici.nombre, telefono: nuevaBici.telefono, trabajo: nuevaBici.trabajo, estado: 'curso' }
-    ]).select()
+  function toggleTarea(index) {
+    const nuevo = [...trabajos]
+    nuevo[index].hecho = !nuevo[index].hecho
+    setTrabajos(nuevo)
+  }
 
-    if (data) {
-      setBicis([...bicis, data[0]])
+  async function guardarBici() {
+    if (!nombre || !telefono || trabajos.length === 0) {
+      alert('Rellena todos los campos y añade al menos una tarea')
+      return
     }
 
-    const telefonoLimpio = limpiarTelefono(nuevaBici.telefono)
-    const existe = historialClientes.find(h => limpiarTelefono(h.telefono) === telefonoLimpio)
+    await supabase.from('bicis').insert({
+      nombre,
+      telefono,
+      trabajos: JSON.stringify(trabajos),
+      fecha: new Date().toISOString(),
+      estado: 'curso'
+    })
+
+    const existe = historial.find(c => c.telefono === telefono)
     if (!existe) {
-      await supabase.from('historial_clientes').insert([
-        { nombre: nuevaBici.nombre, telefono: nuevaBici.telefono }
-      ])
-      setHistorialClientes([...historialClientes, { nombre: nuevaBici.nombre, telefono: nuevaBici.telefono }])
+      await supabase.from('historial_clientes').insert({ nombre, telefono })
     }
 
-    setNuevaBici({ nombre: '', telefono: '', trabajo: '' })
-    setMostrarFormulario(false)
+    setModal(false)
+    setNombre('')
+    setTelefono('')
+    setTrabajos([])
+    cargarDatos()
   }
 
-  const marcarLista = (bici) => {
-    setBiciLista(bici)
-    setPrecioFinal('')
+  async function finalizarBici(id, precio) {
+    const bici = bicis.find(b => b.id === id)
+    
+    await supabase.from('bicis')
+      .update({ 
+        estado: 'finalizada', 
+        fecha_fin: new Date().toISOString(),
+        precio 
+      })
+      .eq('id', id)
+
+    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\nTotal: ${precio}€\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
+    window.open(`https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`, '_blank')
+    
+    setModalFinalizar(null)
+    cargarDatos()
   }
 
-  const enviarWhatsApp = async () => {
-    if (!precioFinal) return
-
-    const telefonoLimpio = limpiarTelefono(biciLista.telefono)
-
-    await supabase.from('bicis').update({
-      estado: 'finalizada',
-      precio: precioFinal,
-      fecha_fin: new Date().toISOString()
-    }).eq('id', biciLista.id)
-
-    setBicis(bicis.map(b =>
-      b.id === biciLista.id
-        ? { ...b, estado: 'finalizada', precio: precioFinal, fecha_fin: new Date().toISOString() }
-        : b
-    ))
-
-    const mensaje = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚲
-
-Total: ${precioFinal}€
-
-⚠️ Por favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
-
-    const url = `https://wa.me/34${telefonoLimpio}?text=${encodeURIComponent(mensaje)}`
-    window.open(url, '_blank')
-
-    setBiciLista(null)
-    setPrecioFinal('')
+  async function eliminarBici(id) {
+    if (confirm('¿Seguro que quieres eliminar esta bici?')) {
+      await supabase.from('bicis').delete().eq('id', id)
+      cargarDatos()
+    }
   }
 
-  const eliminarBici = async (id) => {
-    await supabase.from('bicis').delete().eq('id', id)
-    setBicis(bicis.filter(b => b.id !== id))
-    setConfirmarEliminar(null)
-  }
-
-  const diasEnTaller = (fecha) => {
-    const hoy = new Date()
-    const entrada = new Date(fecha)
-    const diff = Math.floor((hoy - entrada) / (1000 * 60 * 60 * 24))
-    if (diff === 0) return 'Hoy'
-    if (diff === 1) return '1 día'
-    return `${diff} días`
-  }
-
-  const formatearFecha = (fecha) => {
-    return new Date(fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
-  }
-
-  if (cargando) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-5xl mb-4">🚲</div>
-          <p className="text-gray-600">Cargando...</p>
-        </div>
-      </div>
+  const filtradas = bicis
+    .filter(b => b.estado === tab)
+    .filter(b => 
+      b.nombre.toLowerCase().includes(buscar.toLowerCase()) ||
+      b.telefono.includes(buscar)
     )
-  }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="bg-orange-500 text-white p-4 shadow-lg">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="text-4xl font-bold">M</div>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-orange-100 p-8">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold">Bicicletas Manrubia</h1>
-              <p className="text-orange-100 text-sm">Panel del taller</p>
+              <h1 className="text-4xl font-bold text-orange-600">Panel Taller</h1>
+              <p className="text-gray-600 mt-2">Bicicletas Manrubia</p>
+            </div>
+            <div className="text-right">
+              <p className="text-5xl font-bold text-orange-600">{bicis.filter(b => b.estado === 'curso').length}</p>
+              <p className="text-gray-600">bicis en taller</p>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-2xl mx-auto p-4">
-        <div className="bg-white rounded-xl p-6 shadow-md mb-4 text-center">
-          <p className="text-gray-600">Tienes</p>
-          <p className="text-5xl font-bold text-orange-500">{bicisEnCurso.length}</p>
-          <p className="text-gray-600">{bicisEnCurso.length === 1 ? 'bici en el taller' : 'bicis en el taller'}</p>
-        </div>
-
-        <div className="flex mb-4 bg-white rounded-xl p-1 shadow-md">
-          <button
-            onClick={() => setVistaActual('curso')}
-            className={`flex-1 py-3 rounded-lg font-bold transition ${vistaActual === 'curso' ? 'bg-orange-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-          >
-            🔧 En curso ({bicisEnCurso.length})
-          </button>
-          <button
-            onClick={() => setVistaActual('finalizada')}
-            className={`flex-1 py-3 rounded-lg font-bold transition ${vistaActual === 'finalizada' ? 'bg-green-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-          >
-            ✓ Finalizadas ({bicisFinalizadas.length})
-          </button>
-        </div>
-
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            placeholder="🔍 Buscar por nombre o teléfono..."
-            className="flex-1 p-3 rounded-xl border-2 border-gray-200 focus:border-orange-500 focus:outline-none"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
-          {vistaActual === 'curso' && (
+        {/* Tabs y Búsqueda */}
+        <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
+          <div className="flex gap-4 mb-6">
             <button
-              onClick={() => setMostrarFormulario(true)}
-              className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold hover:bg-orange-600 transition"
+              onClick={() => setTab('curso')}
+              className={`flex-1 py-3 rounded-xl font-semibold transition ${
+                tab === 'curso' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
             >
-              + Nueva
+              En Curso
             </button>
-          )}
+            <button
+              onClick={() => setTab('finalizada')}
+              className={`flex-1 py-3 rounded-xl font-semibold transition ${
+                tab === 'finalizada' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Finalizadas
+            </button>
+          </div>
+
+          <div className="flex gap-4">
+            <input
+              type="text"
+              placeholder="Buscar por nombre o teléfono..."
+              value={buscar}
+              onChange={e => setBuscar(e.target.value)}
+              className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none"
+            />
+            <button
+              onClick={() => setModal(true)}
+              className="px-6 py-3 bg-orange-600 text-white rounded-xl font-semibold hover:bg-orange-700 transition flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Nueva Bici
+            </button>
+          </div>
         </div>
 
-        {mostrarFormulario && (
-          <div className="bg-white rounded-xl p-4 shadow-md mb-4">
-            <h2 className="font-bold text-lg mb-3 text-gray-800">Nueva bici</h2>
-            <div className="space-y-3">
-              <input
-                type="tel"
-                placeholder="Teléfono"
-                className="w-full p-3 rounded-lg border-2 border-gray-200 focus:border-orange-500 focus:outline-none"
-                value={nuevaBici.telefono}
-                onChange={(e) => handleTelefonoChange(e.target.value)}
-              />
+        {/* Lista de Bicis */}
+        <div className="space-y-4">
+          {filtradas.map(bici => {
+            const trabajosArray = typeof bici.trabajos === 'string' ? JSON.parse(bici.trabajos) : bici.trabajos
+            
+            return (
+              <div key={bici.id} className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-800">{bici.nombre}</h3>
+                    <p className="text-gray-600">{bici.telefono}</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {new Date(bici.fecha).toLocaleDateString('es-ES')}
+                    </p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    {tab === 'curso' && (
+                      <button
+                        onClick={() => setModalFinalizar(bici.id)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                      >
+                        Marcar Lista
+                      </button>
+                    )}
+                    <button
+                      onClick={() => eliminarBici(bici.id)}
+                      className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de Trabajos */}
+                <div className="bg-orange-50 rounded-lg p-4">
+                  <p className="font-semibold text-gray-700 mb-2">Trabajos:</p>
+                  <ul className="space-y-2">
+                    {trabajosArray?.map((t, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        {t.hecho ? (
+                          <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        ) : (
+                          <div className="w-5 h-5 border-2 border-orange-400 rounded" />
+                        )}
+                        <span className={t.hecho ? 'line-through text-gray-500' : 'text-gray-800'}>
+                          {t.tarea}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {tab === 'finalizada' && bici.precio && (
+                  <div className="mt-4 text-right">
+                    <span className="text-2xl font-bold text-orange-600">{bici.precio}€</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Modal Nueva Bici */}
+        {modal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-2xl font-bold mb-6">Nueva Bici</h2>
+              
               <input
                 type="text"
                 placeholder="Nombre"
-                className="w-full p-3 rounded-lg border-2 border-gray-200 focus:border-orange-500 focus:outline-none"
-                value={nuevaBici.nombre}
-                onChange={(e) => setNuevaBici({ ...nuevaBici, nombre: e.target.value })}
+                value={nombre}
+                onChange={e => setNombre(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-4 focus:border-orange-500 focus:outline-none"
               />
+              
               <input
-                type="text"
-                placeholder="¿Qué hay que hacerle?"
-                className="w-full p-3 rounded-lg border-2 border-gray-200 focus:border-orange-500 focus:outline-none"
-                value={nuevaBici.trabajo}
-                onChange={(e) => setNuevaBici({ ...nuevaBici, trabajo: e.target.value })}
+                type="tel"
+                placeholder="Teléfono"
+                value={telefono}
+                onChange={e => {
+                  setTelefono(e.target.value)
+                  if (e.target.value.length >= 9) buscarCliente(e.target.value)
+                }}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-6 focus:border-orange-500 focus:outline-none"
               />
-              <div className="flex gap-2">
+
+              <div className="mb-6">
+                <p className="font-semibold mb-3">Trabajos a realizar:</p>
+                
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    placeholder="Añadir tarea..."
+                    value={nuevaTarea}
+                    onChange={e => setNuevaTarea(e.target.value)}
+                    onKeyPress={e => e.key === 'Enter' && añadirTarea()}
+                    className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-orange-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={añadirTarea}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                </div>
+
+                <ul className="space-y-2">
+                  {trabajos.map((t, i) => (
+                    <li key={i} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={t.hecho}
+                          onChange={() => toggleTarea(i)}
+                          className="w-5 h-5"
+                        />
+                        <span className={t.hecho ? 'line-through text-gray-500' : ''}>
+                          {t.tarea}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => eliminarTarea(i)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex gap-4">
                 <button
-                  onClick={() => setMostrarFormulario(false)}
-                  className="flex-1 p-3 rounded-lg border-2 border-gray-300 text-gray-600 font-bold hover:bg-gray-100 transition"
+                  onClick={() => setModal(false)}
+                  className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition"
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={agregarBici}
-                  className="flex-1 bg-orange-500 text-white p-3 rounded-lg font-bold hover:bg-orange-600 transition"
+                  onClick={guardarBici}
+                  className="flex-1 px-6 py-3 bg-orange-600 text-white rounded-xl font-semibold hover:bg-orange-700 transition"
                 >
                   Guardar
                 </button>
@@ -238,101 +324,40 @@ Total: ${precioFinal}€
           </div>
         )}
 
-        {biciLista && (
+        {/* Modal Finalizar */}
+        {modalFinalizar && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-sm">
-              <h2 className="font-bold text-lg mb-2 text-gray-800">¡Bici lista!</h2>
-              <p className="text-gray-600 mb-4">{biciLista.nombre} - {biciLista.trabajo}</p>
+            <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+              <h2 className="text-2xl font-bold mb-6">Finalizar Bici</h2>
+              
               <input
                 type="number"
                 placeholder="Precio final (€)"
-                className="w-full p-3 rounded-lg border-2 border-gray-200 focus:border-orange-500 focus:outline-none mb-4 text-2xl text-center"
-                value={precioFinal}
-                onChange={(e) => setPrecioFinal(e.target.value)}
-                autoFocus
+                id="precio-input"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-6 focus:border-orange-500 focus:outline-none"
               />
-              <div className="flex gap-2">
+
+              <div className="flex gap-4">
                 <button
-                  onClick={() => setBiciLista(null)}
-                  className="flex-1 p-3 rounded-lg border-2 border-gray-300 text-gray-600 font-bold hover:bg-gray-100 transition"
+                  onClick={() => setModalFinalizar(null)}
+                  className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition"
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={enviarWhatsApp}
-                  className="flex-1 bg-green-500 text-white p-3 rounded-lg font-bold hover:bg-green-600 transition flex items-center justify-center gap-2"
+                  onClick={() => {
+                    const precio = document.getElementById('precio-input').value
+                    if (precio) finalizarBici(modalFinalizar, precio)
+                  }}
+                  className="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition"
                 >
-                  <span>📱</span> Enviar WhatsApp
+                  Enviar WhatsApp
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {confirmarEliminar && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-sm">
-              <h2 className="font-bold text-lg mb-2 text-gray-800">¿Eliminar bici?</h2>
-              <p className="text-gray-600 mb-4">{confirmarEliminar.nombre} - {confirmarEliminar.trabajo}</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setConfirmarEliminar(null)}
-                  className="flex-1 p-3 rounded-lg border-2 border-gray-300 text-gray-600 font-bold hover:bg-gray-100 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={() => eliminarBici(confirmarEliminar.id)}
-                  className="flex-1 bg-red-500 text-white p-3 rounded-lg font-bold hover:bg-red-600 transition"
-                >
-                  🗑 Eliminar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          {bicisFiltradas.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 text-center text-gray-500">
-              {busqueda ? 'No se encontró ninguna bici' : vistaActual === 'curso' ? 'No hay bicis en el taller' : 'No hay bicis finalizadas'}
-            </div>
-          ) : (
-            bicisFiltradas.map(bici => (
-              <div key={bici.id} className={`bg-white rounded-xl p-4 shadow-md ${bici.estado === 'finalizada' ? 'border-l-4 border-green-500' : ''}`}>
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <p className="font-bold text-gray-800">{bici.nombre}</p>
-                    <p className="text-gray-500 text-sm">{bici.telefono}</p>
-                    <p className="text-orange-600 mt-1">{bici.trabajo}</p>
-                    {bici.estado === 'curso' ? (
-                      <p className="text-gray-400 text-xs mt-1">⏱ {diasEnTaller(bici.fecha)}</p>
-                    ) : (
-                      <p className="text-green-600 text-sm mt-1">✓ {bici.precio}€ · {formatearFecha(bici.fecha_fin)}</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setConfirmarEliminar(bici)}
-                      className="text-gray-400 hover:text-red-500 p-2 transition"
-                      title="Eliminar"
-                    >
-                      🗑
-                    </button>
-                    {bici.estado === 'curso' && (
-                      <button
-                        onClick={() => marcarLista(bici)}
-                        className="bg-green-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-600 transition"
-                      >
-                        ✓ Lista
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
       </div>
     </div>
   )
