@@ -35,22 +35,24 @@ export default function App() {
   }
 
   async function guardarBici() {
-    if (!nombre || !telefono || !trabajo) {
-      alert('Rellena todos los campos')
+    if (!nombre || !trabajo) {
+      alert('Rellena el nombre y el trabajo')
       return
     }
 
     await supabase.from('bicis').insert({
       nombre,
-      telefono,
+      telefono: telefono || null,
       trabajo,
       fecha: new Date().toISOString(),
       estado: 'curso'
     })
 
-    const existe = historial.find(c => c.telefono === telefono)
-    if (!existe) {
-      await supabase.from('historial_clientes').insert({ nombre, telefono })
+    if (telefono) {
+      const existe = historial.find(c => c.telefono === telefono)
+      if (!existe) {
+        await supabase.from('historial_clientes').insert({ nombre, telefono })
+      }
     }
 
     setModal(false)
@@ -118,22 +120,24 @@ export default function App() {
       })
       .eq('id', id)
 
-    // Mensaje WhatsApp con desglose
-    const msgDesglose = conceptos
-      .filter(c => c.concepto && c.precio)
-      .map(c => `• ${c.concepto}: ${c.precio}€`)
-      .join('\n')
-    
-    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\n${msgDesglose}\n\n*Total: ${precioTotal}€*\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
-    
-    // Intentar abrir WhatsApp
-    const urlWhatsApp = `https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`
-    const ventana = window.open(urlWhatsApp, '_blank')
-    
-    if (!ventana) {
-      // Si se bloqueó la ventana, copiar al portapapeles
-      navigator.clipboard.writeText(msg)
-      alert('WhatsApp bloqueado. El mensaje se ha copiado al portapapeles. Pégalo manualmente en WhatsApp.')
+    // Solo enviar WhatsApp si hay teléfono
+    if (bici.telefono) {
+      const msgDesglose = conceptos
+        .filter(c => c.concepto && c.precio)
+        .map(c => `• ${c.concepto}: ${c.precio}€`)
+        .join('\n')
+      
+      const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\n${msgDesglose}\n\n*Total: ${precioTotal}€*\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
+      
+      const urlWhatsApp = `https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`
+      const ventana = window.open(urlWhatsApp, '_blank')
+      
+      if (!ventana) {
+        navigator.clipboard.writeText(msg)
+        alert('WhatsApp bloqueado. El mensaje se ha copiado al portapapeles.')
+      }
+    } else {
+      alert('Bici finalizada correctamente. No hay teléfono para enviar WhatsApp.')
     }
     
     setModalFinalizar(null)
@@ -174,6 +178,11 @@ export default function App() {
   }
 
   async function reenviarWhatsApp(bici) {
+    if (!bici.telefono) {
+      alert('Esta bici no tiene teléfono registrado')
+      return
+    }
+
     if (!bici.desglose || !bici.precio) {
       alert('Esta bici no tiene desglose guardado')
       return
@@ -202,7 +211,7 @@ export default function App() {
     .filter(b => b.estado === tab)
     .filter(b => 
       b.nombre.toLowerCase().includes(buscar.toLowerCase()) ||
-      b.telefono.includes(buscar)
+      (b.telefono && b.telefono.includes(buscar))
     )
 
   return (
@@ -265,7 +274,8 @@ export default function App() {
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-gray-800">{bici.nombre}</h3>
-                  <p className="text-gray-600">{bici.telefono}</p>
+                  {bici.telefono && <p className="text-gray-600">{bici.telefono}</p>}
+                  {!bici.telefono && <p className="text-gray-400 text-sm italic">Sin teléfono</p>}
                   <p className="text-gray-700 mt-2">{bici.trabajo}</p>
                   <p className="text-sm text-gray-500 mt-2">
                     {new Date(bici.fecha).toLocaleDateString('es-ES')}
@@ -308,12 +318,14 @@ export default function App() {
                       >
                         Editar
                       </button>
-                      <button
-                        onClick={() => reenviarWhatsApp(bici)}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-                      >
-                        Reenviar WhatsApp
-                      </button>
+                      {bici.telefono && (
+                        <button
+                          onClick={() => reenviarWhatsApp(bici)}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                        >
+                          Reenviar WhatsApp
+                        </button>
+                      )}
                     </>
                   )}
                   
@@ -336,7 +348,7 @@ export default function App() {
               
               <input
                 type="text"
-                placeholder="Nombre"
+                placeholder="Nombre *"
                 value={nombre}
                 onChange={e => setNombre(e.target.value)}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-4 focus:border-orange-500 focus:outline-none"
@@ -344,7 +356,7 @@ export default function App() {
               
               <input
                 type="tel"
-                placeholder="Teléfono"
+                placeholder="Teléfono (opcional)"
                 value={telefono}
                 onChange={e => {
                   setTelefono(e.target.value)
@@ -354,7 +366,7 @@ export default function App() {
               />
               
               <textarea
-                placeholder="¿Qué hay que hacerle a la bici?"
+                placeholder="¿Qué hay que hacerle a la bici? *"
                 value={trabajo}
                 onChange={e => setTrabajo(e.target.value)}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl mb-6 focus:border-orange-500 focus:outline-none h-32"
