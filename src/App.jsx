@@ -8,6 +8,7 @@ export default function App() {
   const [buscar, setBuscar] = useState('')
   const [modal, setModal] = useState(false)
   const [modalFinalizar, setModalFinalizar] = useState(null)
+  const [modoEdicion, setModoEdicion] = useState(false)
   
   const [nombre, setNombre] = useState('')
   const [telefono, setTelefono] = useState('')
@@ -77,6 +78,21 @@ export default function App() {
     setPrecioTotal(total.toFixed(2))
   }
 
+  function abrirModalEdicion(bici) {
+    setModalFinalizar(bici.id)
+    setModoEdicion(true)
+    
+    // Cargar datos existentes
+    if (bici.desglose) {
+      const conceptosExistentes = bici.desglose.split('\n').map(linea => {
+        const [concepto, precio] = linea.split(': ')
+        return { concepto, precio: precio.replace('€', '') }
+      })
+      setConceptos(conceptosExistentes)
+      setPrecioTotal(bici.precio)
+    }
+  }
+
   async function finalizarBici(id) {
     const bici = bicis.find(b => b.id === id)
     
@@ -106,17 +122,73 @@ export default function App() {
     const msgDesglose = conceptos
       .filter(c => c.concepto && c.precio)
       .map(c => `• ${c.concepto}: ${c.precio}€`)
-      .join('%0A')
+      .join('\n')
     
-    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️%0A%0A${msgDesglose}%0A%0A*Total: ${precioTotal}€*%0A%0APor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
+    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\n${msgDesglose}\n\n*Total: ${precioTotal}€*\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
     
-    // Usar WhatsApp Web en lugar de wa.me
-    window.open(`https://web.whatsapp.com/send?phone=34${bici.telefono}&text=${msg}`, '_blank')
+    // Intentar abrir WhatsApp
+    const urlWhatsApp = `https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`
+    const ventana = window.open(urlWhatsApp, '_blank')
+    
+    if (!ventana) {
+      // Si se bloqueó la ventana, copiar al portapapeles
+      navigator.clipboard.writeText(msg)
+      alert('WhatsApp bloqueado. El mensaje se ha copiado al portapapeles. Pégalo manualmente en WhatsApp.')
+    }
     
     setModalFinalizar(null)
+    setModoEdicion(false)
     setConceptos([{ concepto: '', precio: '' }])
     setPrecioTotal('')
     cargarDatos()
+  }
+
+  async function actualizarBiciEdicion(id) {
+    // Validar que haya al menos un concepto con precio
+    const hayConceptos = conceptos.some(c => c.concepto && c.precio)
+    if (!hayConceptos || !precioTotal) {
+      alert('Añade al menos un concepto con precio')
+      return
+    }
+
+    // Generar desglose en texto
+    const desglose = conceptos
+      .filter(c => c.concepto && c.precio)
+      .map(c => `${c.concepto}: ${c.precio}€`)
+      .join('\n')
+    
+    await supabase.from('bicis')
+      .update({ 
+        precio: precioTotal,
+        desglose: desglose
+      })
+      .eq('id', id)
+
+    alert('Bici actualizada correctamente')
+    
+    setModalFinalizar(null)
+    setModoEdicion(false)
+    setConceptos([{ concepto: '', precio: '' }])
+    setPrecioTotal('')
+    cargarDatos()
+  }
+
+  async function reenviarWhatsApp(bici) {
+    if (!bici.desglose || !bici.precio) {
+      alert('Esta bici no tiene desglose guardado')
+      return
+    }
+
+    const msgDesglose = bici.desglose.split('\n').map(linea => `• ${linea}`).join('\n')
+    const msg = `¡Hola! Tu bici ya está lista para recoger en Bicicletas Manrubia 🚴‍♂️\n\n${msgDesglose}\n\n*Total: ${bici.precio}€*\n\nPor favor, no respondas a este mensaje. Para cualquier duda, llámanos al 964 667 035.`
+    
+    const urlWhatsApp = `https://wa.me/34${bici.telefono}?text=${encodeURIComponent(msg)}`
+    const ventana = window.open(urlWhatsApp, '_blank')
+    
+    if (!ventana) {
+      navigator.clipboard.writeText(msg)
+      alert('WhatsApp bloqueado. El mensaje se ha copiado al portapapeles.')
+    }
   }
 
   async function eliminarBici(id) {
@@ -218,7 +290,7 @@ export default function App() {
                   )}
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-end">
                   {tab === 'curso' && (
                     <button
                       onClick={() => setModalFinalizar(bici.id)}
@@ -227,6 +299,24 @@ export default function App() {
                       Marcar Lista
                     </button>
                   )}
+                  
+                  {tab === 'finalizada' && (
+                    <>
+                      <button
+                        onClick={() => abrirModalEdicion(bici)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => reenviarWhatsApp(bici)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                      >
+                        Reenviar WhatsApp
+                      </button>
+                    </>
+                  )}
+                  
                   <button
                     onClick={() => eliminarBici(bici.id)}
                     className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
@@ -291,7 +381,9 @@ export default function App() {
         {modalFinalizar && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-bold mb-6">Finalizar Bici - Desglose</h2>
+              <h2 className="text-2xl font-bold mb-6">
+                {modoEdicion ? 'Editar Desglose' : 'Finalizar Bici - Desglose'}
+              </h2>
               
               <div className="space-y-3 mb-6">
                 {conceptos.map((c, i) => (
@@ -340,6 +432,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     setModalFinalizar(null)
+                    setModoEdicion(false)
                     setConceptos([{ concepto: '', precio: '' }])
                     setPrecioTotal('')
                   }}
@@ -348,10 +441,10 @@ export default function App() {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => finalizarBici(modalFinalizar)}
+                  onClick={() => modoEdicion ? actualizarBiciEdicion(modalFinalizar) : finalizarBici(modalFinalizar)}
                   className="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition"
                 >
-                  Finalizar y Enviar WhatsApp
+                  {modoEdicion ? 'Guardar Cambios' : 'Finalizar y Enviar WhatsApp'}
                 </button>
               </div>
             </div>
