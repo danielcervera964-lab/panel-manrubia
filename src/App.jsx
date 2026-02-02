@@ -30,6 +30,7 @@ export default function App() {
   }
 
   async function buscarCliente(tel) {
+    if (!tel) return
     const cliente = historial.find(c => c.telefono === tel)
     if (cliente) setNombre(cliente.nombre)
   }
@@ -40,15 +41,21 @@ export default function App() {
       return
     }
 
-    await supabase.from('bicis').insert({
+    const { data, error } = await supabase.from('bicis').insert({
       nombre,
-      telefono: telefono || null,
+      telefono: telefono.trim() || null,
       trabajo,
       fecha: new Date().toISOString(),
       estado: 'curso'
     })
 
-    if (telefono) {
+    if (error) {
+      alert('Error al guardar: ' + error.message)
+      console.error(error)
+      return
+    }
+
+    if (telefono && telefono.trim()) {
       const existe = historial.find(c => c.telefono === telefono)
       if (!existe) {
         await supabase.from('historial_clientes').insert({ nombre, telefono })
@@ -121,7 +128,7 @@ export default function App() {
       .eq('id', id)
 
     // Solo enviar WhatsApp si hay teléfono
-    if (bici.telefono) {
+    if (bici.telefono && bici.telefono.trim()) {
       const msgDesglose = conceptos
         .filter(c => c.concepto && c.precio)
         .map(c => `• ${c.concepto}: ${c.precio}€`)
@@ -178,7 +185,7 @@ export default function App() {
   }
 
   async function reenviarWhatsApp(bici) {
-    if (!bici.telefono) {
+    if (!bici.telefono || !bici.telefono.trim()) {
       alert('Esta bici no tiene teléfono registrado')
       return
     }
@@ -274,8 +281,11 @@ export default function App() {
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-gray-800">{bici.nombre}</h3>
-                  {bici.telefono && <p className="text-gray-600">{bici.telefono}</p>}
-                  {!bici.telefono && <p className="text-gray-400 text-sm italic">Sin teléfono</p>}
+                  {bici.telefono ? (
+                    <p className="text-gray-600">{bici.telefono}</p>
+                  ) : (
+                    <p className="text-gray-400 text-sm italic">Sin teléfono</p>
+                  )}
                   <p className="text-gray-700 mt-2">{bici.trabajo}</p>
                   <p className="text-sm text-gray-500 mt-2">
                     {new Date(bici.fecha).toLocaleDateString('es-ES')}
@@ -374,7 +384,12 @@ export default function App() {
 
               <div className="flex gap-4">
                 <button
-                  onClick={() => setModal(false)}
+                  onClick={() => {
+                    setModal(false)
+                    setNombre('')
+                    setTelefono('')
+                    setTrabajo('')
+                  }}
                   className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition"
                 >
                   Cancelar
