@@ -1,6 +1,5 @@
 // Panel de José Manrubia
 import { useState, useEffect } from 'react'
-import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
 function App() {
